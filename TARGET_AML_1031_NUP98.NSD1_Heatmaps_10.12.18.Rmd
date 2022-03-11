@@ -1,0 +1,67 @@
+---
+title: 'NUP98-NSD1 vs Other AMLs in AAML1031'
+author: "Jenny Smith"
+date: "October 15, 2018"
+output: html_document
+---
+
+
+```{r setup}
+library(knitr)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=50),tidy=TRUE, fig.align='center', fig.height=5, fig.width=8)
+knitr::opts_knit$set(root.dir = '/fh/fast/meshinchi_s/workingDir/TARGET/AML_TARGET/RNA/mRNAseq/analysis/2017.10.25_1031_NUP98-NSD1/')
+options(stringsAsFactors = FALSE)
+```
+
+```{r message = FALSE, warning=FALSE, echo=FALSE}
+library(captioner)
+figs <- captioner(prefix = "Figure")
+```
+
+```{r}
+annotation <- readRDS("TARGET_AML_NUP98.NSD1_vs_OtherAML_anno.RDS")
+```
+
+```{r}
+heatmaps <- readRDS("TARGET_AML_1031_NUP98.NSD1_vs_OtherAMLs_inclNups_Heatmaps.RDS")
+summary(heatmaps)
+```
+
+```{r echo=FALSE, fig.cap="All differentially expressed genes. Adj. p < 0.05, 3025 genes."}
+heatmaps[[1]]
+# figs(name="h1", "All differentially expressed genes. Adj. p < 0.05, 3025 genes.")
+```
+
+```{r echo=FALSE,fig.cap="50th Percentile of lowest p-values. Adj. p < 1e-06, 1357  genes"}
+heatmaps[[2]]
+# figs(name="h2", "50th Percentile of lowest p-values. Adj. p < 1e-06, 1357  genes")
+```
+
+```{r echo=FALSE, fig.cap="20th Percentile of lowest p-values. Adj. p < 1e-09, 557 genes"}
+heatmaps[[3]]
+# figs(name="h3", "20th Percentile of lowest p-values. Adj. p < 1e-09, 557 genes")
+```
+
+```{r echo=FALSE, fig.cap="10th Percentile of lowest p-values. Adj. p < 1e-12, 223 genes"}
+heatmaps[[4]]
+# figs(name="h4", "10th Percentile of lowest p-values. Adj. p < 1e-12, 223 genes")
+```
+
+```{r echo=FALSE, fig.cap="75th Percentile of absolute value log2 fold-changes. abs(FC) >= 1.8, 757 genes"}
+heatmaps[[5]]
+# figs(name="h5", "75th Percentile of absolute value log2 fold-changes. abs(FC) >= 1.8, 757 genes")
+```
+
+```{r echo=FALSE, fig.cap="90th Percentile of absolute value log2 fold-changes. abs(FC) >= 2.3, 303 genes"}
+heatmaps[[6]]
+# figs(name="h6", "90th Percentile of absolute value log2 fold-changes. abs(FC) >= 2.3, 303 genes")
+```
+
+
+
+#Session Information
+
+```{r}
+sessionInfo()
+```
+

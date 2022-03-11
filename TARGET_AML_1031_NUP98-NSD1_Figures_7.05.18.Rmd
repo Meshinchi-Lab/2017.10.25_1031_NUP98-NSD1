@@ -1,0 +1,299 @@
+---
+title: "Differential Expression of NUP98-NSD1: FIgure for Sanne"
+author: "Jenny Smith"
+date: "July, 5 2018"
+output: html_document
+---
+
+
+
+```{r setup}
+library(knitr)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=50),tidy=TRUE, fig.align='center', fig.height = 10, fig.width = 10)
+knitr::opts_knit$set(root.dir = '/fh/fast/meshinchi_s/workingDir/TARGET/AML_TARGET/RNA/mRNAseq/analysis/2017.10.25_1031_NUP98-NSD1/')
+options(stringsAsFactors = FALSE)
+```
+
+
+```{r message = FALSE, warning=FALSE}
+library(stringr)
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(tibble)
+getwd()
+```
+
+NOTE: Updated the methods on 5/7/18  to use "DifferentialExpressionPipeline_3.21.18.r"
+NOTE: Updated on 7/5/18 to use DifferentialExpressionPipeline_7.05.18.r
+
+```{r}
+# source("~/scripts/survival_analysis/Survplot_Functions_2017.03.31.r")
+# source("~/scripts/RNAseq_Analysis/MSLN_waterfallplots/Waterfall_Barplot_Function_2017.05.22.r")
+# source("~/scripts/conversion_scripts/Merge_Cat_FixDupIDs_Function.r")
+source("~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/DifferentialExpressionPipeline_7.05.18.r")
+```
+
+
+
+#Define Functions to be used
+
+```{r}
+mutationGroup <- function(NPM1,CEBPA,NUP98.NSD1,CBF=FALSE,inv.16.16_t.16.16=NULL,t.8.21=NULL){
+#yes,this assumes if CBF-AML + FLT3-ITD, does not have any additional co-occuring mutations. 
+  
+  NPM1orCEBPA <-  any(grepl("Pos|Yes",c(NPM1,CEBPA),ignore.case=TRUE))
+  NSD1 <- grepl("Pos|Yes", NUP98.NSD1, ignore.case = TRUE)
+  
+  if (NPM1orCEBPA){
+    grp <- "NPM1 or CEBPA, FLT3-ITD"
+
+  }else if (NSD1){
+    grp <- "NUP98-NSD1, FLT3-ITD" #NOTE THERE IS ONE NUP98-NSD1 + NPM1 + FLT3-ITD patient.... in0531
+
+  }else{
+    grp <- "FLT3-ITD"
+
+  }
+
+  if (CBF){ #ONE patient is NSD1+ and Inv16 ... in 0531
+    grp[grepl("Pos|Yes", inv.16.16_t.16.16, ignore.case = TRUE) | grepl("Pos|Yes",t.8.21, ignore.case = TRUE)] <- "CBF, FLT3-ITD"
+  }
+
+  return(grp)
+}
+```
+
+
+
+#Read in the clinical Data
+
+```{r}
+cohort <- read.csv("DEGs/Voom_ForSanne/Trend/Cohort_1031_NUP98.KDM5A_forSanne.csv")
+head(cohort)
+dim(cohort)
+```
+
+
+```{r}
+CDE.1031 <- read.csv("~/reference_mapping-files/TARGET_AML_1031_CDE_cleaned_7.06.2018.csv",
+                     stringsAsFactors = FALSE)
+
+CDE.1031 <- CDE.1031 %>%
+  filter(USI %in% cohort$X)
+
+# head(CDE.1031[,1:5])
+dim(CDE.1031)
+```
+
+```{r}
+table(CDE.1031$NUP98.KDM5A_RNASeqCalls)
+table(CDE.1031$NUP98.NSD1_RNASeqCalls)
+```
+
+```{r}
+pos.1031 <- CDE.1031 %>%
+  filter(grepl("Yes",NUP98.NSD1_RNASeqCalls)) %>%
+  select(USI) %>%
+  unlist()
+
+
+length(pos.1031)
+```
+
+
+#Results from Differential Expression 
+
+```{r message=FALSE}
+#This is the list for Sanne Noort
+NSD1vsOtherAMLs <- get(load("DEGs/Voom_ForSanne/TARGET_AML_0531_1031_NUP98.NSD1_vs_otherAML_DEGs_list.RData"))
+```
+
+```{r}
+summary(NSD1vsOtherAMLs) 
+```
+
+```{r}
+# table(NSD1vsOtherAMLs$HD.0531$phenovector)
+lapply(NSD1vsOtherAMLs, function(x) table(x$phenovector)) #34 in LD.0531, and 47 in 1031
+
+```
+
+```{r}
+NSD1vsOtherAMLs.DEGs <- lapply(NSD1vsOtherAMLs, extract_DEGs)
+# lapply(NSD1vsOtherAMLs.DEGs, head, n=10)
+lapply(NSD1vsOtherAMLs.DEGs, dim)
+```
+
+
+#Differential Expression of AML Rare Variants versus Normal BM
+
+```{r}
+# pdf(file="TARGET_AML_NUP98.NSD1_vs_NormalBM_DEGs_Heatmaps_7.09.18.pdf")
+DEGs.NSD1vBM <- get(load("TARGET_AML_0531_1031_NUP98.NSD1_vs_NBM_DEGs.RData"))
+```
+
+```{r}
+NBM.df <- lapply(DEGs.NSD1vBM, extract_DEGs)
+
+# lapply(NBM.df, head, n=10)
+# lapply(NBM.df, dim)
+```
+
+```{r}
+PCA.NBM <- lapply(DEGs.NSD1vBM, extract_PCA)
+
+PCA.NBM
+```
+
+
+
+#Heatmaps and Clustering
+
+```{r}
+source("~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/Heatmaps_Function.r")
+```
+
+
+```{r}
+NSD1.1031 <- NSD1vsOtherAMLs$HD.1031
+DEGs.df <- read.csv("DEGs/Voom_ForSanne/Trend/TARGET_AML_NUP98.NSD1_vs_OtherAMLs_includingNUPs_HD.1031_DEGs.csv")
+
+#must update the pheno vector to make it consistent. 
+#there were some NSD1 who were found to be NSD1 later. 
+NSD1.pheno <- NSD1.1031$phenovector[cohort$X]
+NSD1.pheno[setdiff(pos.1031, names(NSD1.pheno[NSD1.pheno == "GroupA"]))] <- "GroupA"
+table(NSD1.pheno)
+```
+
+```{r}
+dim(DEGs.df)
+quart <- quantile(abs(DEGs.df$logFC))
+dec <- quantile(abs(DEGs.df$logFC), probs = seq(0,1,length.out = 11), type = 5)
+quart
+dec
+```
+
+```{r}
+quantile(DEGs.df$adj.P.Val, probs = seq(0,1,length.out = 11), type = 5)
+
+sum(DEGs.df$adj.P.Val < 1e-06) #1357 (50%)
+sum(DEGs.df$adj.P.Val < 1e-09) #557 (20%)
+sum(DEGs.df$adj.P.Val < 1e-12) #223 (10%)
+```
+
+```{r}
+pval.cuts <- c(1e-06,1e-09,1e-12)
+fc.cuts <- c(quart[4],dec[10])
+gene.lists <- list()
+
+for (lim in c(1,pval.cuts, fc.cuts)){ 
+
+  if(lim <= 1){
+    l <- DEGs.df %>%
+      filter(adj.P.Val < lim)
+    name <- paste0("Pval_",lim)
+  }else{
+    l <- DEGs.df %>%
+      filter(abs(logFC) >= lim)
+    name <- paste0("absFC_",round(lim, digits = 1))
+  }
+  
+
+  l <- l %>%
+    select(gene) %>%
+    unlist()
+
+  gene.lists[[name]] <- l
+    
+}
+sapply(gene.lists, length)
+sapply(gene.lists, head)
+```
+
+
+```{r}
+CPM <- cpm(NSD1.1031$DE$dge,log = TRUE,prior.count = 1)[,names(NSD1.pheno)]
+dends <- lapply(gene.lists, function(x) dendrograms(df=CPM, 
+                                                    pheno = NSD1.1031$phenovector, 
+                                                    log=FALSE,
+                                                    genelist = x))
+
+```
+
+
+```{r}
+colorCodes <- c("DEK.NUP214"="#4DAF4A", 
+        "inv.16."="#E41A1C",
+        "KMT2A"="#377EB8", 
+        "Normal"="chartreuse",
+        "NPM1"="#FFFF33",
+        "NUP98.KDM5A"="#984EA3", 
+        "NUP98.NSD1"="#FF7F00",
+        "OtherAML"="lightgrey",
+        "t.8.21."="#A65628")
+```
+
+
+```{r}
+# cols <- c("DEK.NUP214","inv.16.","KMT2A","NPM1","NUP98.KDM5A","NUP98.NSD1", "t.8.21.","Normal")
+pheno.df <- CDE.1031 %>%
+  rename_at(vars(contains("_RNASeqCalls")), funs(gsub("_RNASeqCalls", "", .))) %>%
+  mutate(Normal=gsub("^$|inv.+|MLL|Other|t.+|Unknown", "No", Primary.Cytogenetic.Code)) %>%
+  mutate(Normal=ifelse(is.na(Normal), "No", Normal)) %>%
+  select(USI,KMT2A=MLL,NPM1=NPM.mutation.,DEK.NUP214,inv.16.,NUP98.KDM5A,NUP98.NSD1, t.8.21.,Normal) %>%
+  mutate(Var1=pheno_bars(CDE=., IDCol = "USI", cols = c("NUP98.KDM5A", "NUP98.NSD1","DEK.NUP214")), 
+         Var2=pheno_bars(CDE=., IDCol = "USI", cols = c("inv.16.","t.8.21.","KMT2A","NPM1")), 
+         Var3=pheno_bars(CDE=., IDCol = "USI", cols = c("Normal")))
+
+
+head(pheno.df)
+# # table(pheno.bar)
+lapply(pheno.df[,9:12],table, useNA="always")
+```
+
+
+```{r}
+anno <- create_HA_Labs_Hmap(expn = CPM, 
+                            geneList = rownames(CPM), 
+                            CDE=pheno.df, 
+                            cols=paste0("Var",1:3),
+                            cc=list(Var1=colorCodes[c("NUP98.KDM5A", "NUP98.NSD1","DEK.NUP214","OtherAML")],
+                                    Var2=colorCodes[c("inv.16.","t.8.21.","KMT2A","NPM1", "OtherAML")],
+                                    Var3=colorCodes[c("Normal","OtherAML")]))
+```
+
+```{r message=FALSE}
+hmap.list <- list()
+for (i in 1:length(gene.lists)){
+  h <- ComplexHmap(mat=CPM,
+                   name=names(gene.lists)[i], 
+                   hmap_anno_obj=anno$annoColumn)
+  hmap.list[[i]] <- h
+}
+summary(hmap.list)
+```
+
+```{r}
+hmap.list$
+```
+
+```{r fig.height=10, fig.width=10}
+lapply(hmap.list, draw)
+```
+
+
+
+
+
+
+#Session Information 
+
+
+```{r}
+sessionInfo()
+```
+
+
+

@@ -1,0 +1,592 @@
+---
+title: "Differential Expression of NUP98-NSD1"
+author: "Jenny Smith"
+date: "March 26, 2018"
+output: html_document
+---
+
+
+
+```{r setup}
+library(knitr)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=50),tidy=TRUE, fig.align='center', fig.height = 10, fig.width = 10)
+knitr::opts_knit$set(root.dir = '/fh/fast/meshinchi_s/workingDir/TARGET/AML_TARGET/RNA/mRNAseq/analysis/2017.10.25_1031_NUP98-NSD1/')
+options(stringsAsFactors = FALSE)
+```
+
+
+```{r message = FALSE, warning=FALSE}
+library(stringr)
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(tibble)
+getwd()
+```
+
+
+
+NOTE: Updated the methods on 5/7/18  to use "DifferentialExpressionPipeline_3.21.18.r"
+
+```{r}
+# source("~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/DifferentialExpressionPipeline.r")
+# source("~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/DifferentialExpressionPipeline_3.21.18.r")
+source("~/scripts/survival_analysis/Survplot_Functions_2017.03.31.r")
+source("~/scripts/RNAseq_Analysis/Waterfallplots/Waterfall_Barplot_Function_2017.05.22.r")
+```
+
+
+
+#Define Functions to be used
+
+```{r}
+mutationGroup <- function(NPM1,CEBPA,NUP98.NSD1,CBF=FALSE,inv.16.16_t.16.16=NULL,t.8.21=NULL){
+#yes,this assumes if CBF-AML + FLT3-ITD, does not have any additional co-occuring mutations. 
+  
+  NPM1orCEBPA <-  any(grepl("Pos|Yes",c(NPM1,CEBPA),ignore.case=TRUE))
+  NSD1 <- grepl("Pos|Yes", NUP98.NSD1, ignore.case = TRUE)
+  
+  if (NPM1orCEBPA){
+    grp <- "NPM1 or CEBPA, FLT3-ITD"
+
+  }else if (NSD1){
+    grp <- "NUP98-NSD1, FLT3-ITD" #NOTE THERE IS ONE NUP98-NSD1 + NPM1 + FLT3-ITD patient.... in0531
+
+  }else{
+    grp <- "FLT3-ITD"
+
+  }
+
+  if (CBF){ #ONE patient is NSD1+ and Inv16 ... in 0531
+    grp[grepl("Pos|Yes", inv.16.16_t.16.16, ignore.case = TRUE) | grepl("Pos|Yes",t.8.21, ignore.case = TRUE)] <- "CBF, FLT3-ITD"
+  }
+
+  return(grp)
+}
+```
+
+```{r}
+matchCompartment <- function(gene, df){
+  #keywords: extracellular, plasma membrane, transmembrane
+  library(dplyr)
+  
+  regex <- paste0("\\b", gene,"\\b")
+  comp <- df %>%
+    # filter(V2 == gene) %>%
+    filter(grepl(regex, V2, ignore.case = TRUE)) %>%
+    filter(grepl("extracellular|plasma membrane|transmembrane", V4, ignore.case = TRUE)) %>%
+    select(V4)
+
+  res <- paste(unlist(unique(comp)),collapse="; ")
+  
+  return(res)
+}
+```
+
+
+```{r}
+matchUniprot <- function(gene, df){
+  library(dplyr)
+  
+  #create a stop gap measure to prevent grepl from choking on the NAs in some of the gene names 
+  if (is.na(gene)){
+    gene <- "none"
+  }
+  
+  regex <- paste0("\\b", gene,"\\b")
+  uniprot <- uniprot %>%
+    filter(grepl(regex, Gene.names, ignore.case = TRUE)) %>%
+    select(Transmembrane)
+  
+  res <- unlist(unique(uniprot))
+  
+  if (length(res) == 0){
+    res <- ""
+  }else if (length(res) > 1){
+    # print(gene)
+    # print(res)
+    res <- paste(unlist(unique(uniprot)),collapse="; ")
+  }
+  
+  return(res)
+}
+```
+
+
+#Read in the counts
+
+```{r}
+# cts.1031 <- read.csv("~/RNA_seq_Analysis/0000.00.03_Expression_Matrices/TARGET_AML_AAML1031_dupGenesRemoved_FractionalCounts.csv", stringsAsFactors = FALSE, row.names = 1)
+# colnames(cts.1031) <- str_split_fixed(colnames(cts.1031),  "\\.", 2)[,1]
+# head(cts.1031[,1:5])
+```
+
+```{r}
+# cts.0531 <- read.csv("~/RNA_seq_Analysis/0000.00.03_Expression_Matrices/TARGET_AML_AAML0531_dupGenesRemoved_fractionalCounts.csv", stringsAsFactors = FALSE,
+#                      row.names = 1)
+# head(cts.0531[,1:5])
+```
+
+```{r}
+# cts.0531.HD <- read.csv("~/RNA_seq_Analysis/0000.00.03_Expression_Matrices/TARGET_AML_DxSamples_dupGenesRemoved_cts_Aug2014.csv", stringsAsFactors = FALSE, row.names = 1)
+# 
+# colnames(cts.0531.HD) <- str_split_fixed(colnames(cts.0531.HD), "\\.", n=5)[,3]
+# head(cts.0531.HD[,1:5])
+```
+
+```{r}
+# cts.list <- list("HD.0531"=cts.0531.HD, "LD.0531"=cts.0531,"HD.1031"=cts.1031)
+# saveRDS(cts.list, "~/RNA_seq_Analysis/0000.00.03_Expression_Matrices/TARGET_AML_0531_1031_dupGenesRemoved_Counts_List.RDS")
+```
+
+
+```{r}
+# tpm <- read.csv("ExpressionData/TARGET_AML_AAML1031_dupGenesRemoved_TPM.csv", stringsAsFactors = FALSE,
+#                 row.names = 1)
+
+# head(tpm[,1:5])
+```
+
+
+
+
+#Read in the clinical Data
+
+
+```{r}
+CDE.1031 <- read.csv("~/reference_mapping-files/TARGET_AML_1031_CDE_cleaned_5.01.18.csv",
+                     stringsAsFactors = FALSE)
+
+CDE.1031 <- CDE.1031 %>%
+  filter(!is.na(USI)) %>%
+  column_to_rownames("USI")
+
+head(CDE.1031)
+dim(CDE.1031)
+```
+
+```{r}
+table(CDE.1031$NUP98.NSD1)
+```
+
+```{r}
+CDE.0531 <- read.csv("~/reference_mapping-files/TARGET_AML_current_asof_june30_2016_UPDATED_CLEAN_4.19.18.csv", stringsAsFactors = FALSE, row.names = 1)
+head(CDE.0531[,1:5])
+```
+
+```{r}
+table(CDE.0531$NUP98.NSD1)
+```
+
+
+
+#Read in the Reference Data 
+
+```{r}
+comp.knowledge <- read.delim("~/RNA_seq_Analysis/0000.00.02_Reference_GeneInfo/human_compartment_knowledge_full.tsv",
+                           stringsAsFactors = FALSE, sep="\t", header=FALSE)
+# head(comp.knowledge)
+# dim(comp.knowledge) #680302      7
+```
+
+```{r}
+comp.text <- read.delim("~/RNA_seq_Analysis/0000.00.02_Reference_GeneInfo/human_compartment_textmining_full.tsv", 
+                        stringsAsFactors = FALSE, sep="\t", header = FALSE)
+
+# head(comp.text)
+# dim(comp.text) 654223      7
+```
+
+
+```{r}
+uniprot <- read.csv("~/RNA_seq_Analysis/0000.00.02_Reference_GeneInfo/uniprot_human_allGenes_SwissProt.csv", 
+                    stringsAsFactors = FALSE)
+
+head(uniprot)
+```
+
+
+
+#Perform Differential Expression Analysis 
+
+Limma Trend with LogCPM and TMM normalized counts. Rare Variant AML vs All Other AML
+
+Using Fractional Counts as Input
+
+```{r}
+merged <- read.csv("~/reference_mapping-files/TARGET_AML_1031_0531_Merged_CDE_3.30.18.csv", stringsAsFactors = FALSE)
+
+merged <- merged %>% 
+  filter(!is.na(TARGET.USI.1)) %>%
+  set_rownames(.$TARGET.USI.1)
+
+# dim(merged)
+head(merged[,1:5])
+```
+
+```{r}
+table(merged$NUP98.NSD1)
+```
+
+```{r}
+merged.ExclOtherNups <- merged %>%
+  filter(grepl("NUP98-NSD1|OtherAML",NUP98.Fusions)) %>%
+  set_rownames(.$TARGET.USI.1)
+
+dim(merged.ExclOtherNups)
+```
+
+
+
+#Perform Differential Expression 
+
+```{r message=FALSE}
+# pdf("TARGET_AML_0531_1031_NUP98.NSD1vsOtherAML_IncludingOtherNUPs_heatmaps_5.7.18.pdf", 
+    # height = 10, width = 10)
+NSD1vsOtherAMLs <- lapply(cts.list, twoGroups_DEGs, 
+                          clinData=merged,
+                          col="NUP98.NSD1",
+                          ref="No",
+                          logCPM=FALSE)
+# dev.off()
+# save(NSD1vsOtherAMLs, file="TARGET_AML_0531_1031_NUP98.NSD1_vs_otherAML_DEGs_list.RData")
+load("DEGs/Voom_ForSanne/TARGET_AML_0531_1031_NUP98.NSD1_vs_otherAML_DEGs_list.RData")
+```
+
+```{r}
+# table(NSD1vsOtherAMLs$HD.0531$phenovector)
+lapply(NSD1vsOtherAMLs, function(x) table(x$phenovector))
+```
+
+```{r}
+NSD1vsOtherAMLs.DEGs <- lapply(NSD1vsOtherAMLs, extract_DEGs)
+lapply(NSD1vsOtherAMLs.DEGs, head, n=10)
+```
+
+```{r}
+# lapply(names(NSD1vsOtherAMLs.DEGs), function(x) write.csv(NSD1vsOtherAMLs.DEGs[[x]],                                          file=paste0("TARGET_AML_NUP98.NSD1_vs_OtherAMLs_includingNUPs_",x,"_DEGs_5.7.18.csv")))
+```
+
+
+
+#Add in Transmembrane and Compartment information 
+
+```{r}
+DEGs.vsAML.Compartments <- NSD1vsOtherAMLs.DEGs$HD.1031 %>%
+  dplyr::rowwise() %>%
+  # mutate(Cellular.Compartment_textMining=matchCompartment(gene, df=comp.text)) %>%
+  mutate(Cellular.Compartment_KnowledgeBased=matchCompartment(gene, df=comp.knowledge)) %>%
+  mutate(Transmembrane.Uniprot=matchUniprot(gene,df = uniprot))
+  
+
+dim(DEGs.vsAML.Compartments)
+```
+
+
+```{r}
+# write.csv(DEGs.vsAML.Compartments,
+#           file="TARGET_AML_NUP98.NSD1_vs_OtherAMLs_includingNUPs_DEGs_withCellCompartments_5.7.18.csv",
+#           row.names=FALSE)
+
+```
+
+
+#Exluding Other NUP Variants 
+
+```{r}
+# pdf("TARGET_AML_0531_1031_NUP98.NSD1vsOtherAML_ExclNups_heatmaps.pdf", height = 10, width = 10)
+NSD1vsOtherAMLs.ExclNups <- lapply(cts.list, twoGroups_DEGs,
+                                   clinData=merged.ExclOtherNups,
+                                   col="NUP98.NSD1",
+                                   ref="No",
+                                   logCPM=FALSE)
+# dev.off()
+```
+
+
+```{r}
+NSD1.ExclNups.DEGs <- lapply(NSD1vsOtherAMLs.ExclNups, extract_DEGs)
+```
+
+
+```{r}
+# lapply(names(NSD1.ExclNups.DEGs),function(x) write.csv(NSD1.ExclNups.DEGs[[x]],
+#                                                        file=paste0("TARGET_AML_NUP98.NSD1_vs_OtherAMLs_", x,"DEGS.csv"), row.names = FALSE))
+```
+
+
+
+#Examine QC plots
+
+```{r}
+# pdf("NUP98-NSD1vsOtherAML_MDS.pdf")
+extract_MDS(DEGs.NSD1)
+# dev.off()
+```
+
+
+```{r}
+# pdf("NUP98-NSD1vsOtherAML_PCA.pdf")
+extract_PCA(DEGs.NSD1)
+# dev.off()
+```
+
+
+
+#Differential Expression of AML Rare Variants versus Normal BM
+
+```{r}
+# pdf(file="TARGET_AML_NUP98.NSD1_vs_NormalBM_DEGs_Heatmaps_5.7.18.pdf")
+DEGs.NSD1vBM <- lapply(cts.list[2:3], twoGroups_DEGs,
+                                   clinData=merged,
+                                   col="NUP98.NSD1",
+                                   ref="No",
+                                   logCPM=FALSE, 
+                                   BM=TRUE)
+# dev.off()
+# save(DEGs.NSD1vBM, file="TARGET_AML_0531_1031_NUP98.NSD1_vs_NBM_DEGs_list.RData")
+```
+
+```{r}
+NBM.df <- lapply(DEGs.NSD1vBM, extract_DEGs)
+
+lapply(NBM.df, head, n=10)
+```
+
+
+```{r}
+# lapply(names(NBM.df),function(x) write.csv(NBM.df[[x]],
+#                                            file=paste0("TARGET_AML_",x,"_NUP98-NSD1_vs_NormalBM_DEGs.csv"),
+#                                            row.names = FALSE))
+```
+
+
+#Add in Transmembrane and Compartment information 
+
+
+```{r}
+DEGs.vsNBM.Compartments <- NBM.df$HD.1031 %>%
+  dplyr::rowwise() %>%
+  
+  # mutate(Cellular.Compartment_textMining=matchCompartment(gene, df=comp.text)) %>%
+  mutate(Cellular.Compartment_KnowledgeBased=matchCompartment(gene, df=comp.knowledge)) %>%
+  mutate(Transmembrane.Uniprot=matchUniprot(gene,df = uniprot))
+  
+
+# dim(DEGs.vsNBM.Compartments)
+```
+
+
+```{r}
+# write.csv(DEGs.vsNBM.Compartments,
+#           file="TARGET_AML_1031_NUP98.NSD1_vs_NBM_includingNUPs_DEGs_withCellCompartments_5.7.18.csv",
+#           row.names=FALSE)
+```
+
+
+
+#Check out the QC plots
+
+```{r}
+# pdf("NUP98-NSD1_vs_NormalBM_PCA.pdf")
+lapply(DEGs.NSD1vBM,extract_PCA)
+# dev.off()
+```
+
+
+```{r}
+# pdf("NUP98-NSD1_vs_NormalBM_MSD.pdf")
+lapply(DEGs.NSD1vBM,extract_MDS)
+# dev.off()
+```
+
+
+
+#Examine the GSEA analysis Results 
+
+```{r}
+summary(NSD1vsOtherAMLs)
+```
+
+```{r}
+NSD1vsOtherAMLs$HD.1031$DE$Voom
+```
+
+
+
+
+
+
+
+
+
+
+
+#Differential Expression of FLT3-ITD with NUP98-NSD1 vs FLT3-ITD Alone
+
+mutate(ITD.NSD1=ifelse(grepl("FLT3-ITD", MutGrps4), "ITD", "ITD.NSD1")) %>%
+```{r}
+# idx <- FLT3.NSD1$MutGrps4 != "CBF, FLT3-ITD" & FLT3.NSD1$MutGrps4 != "NPM1 or CEBPA, FLT3-ITD"
+FLT3alone <- FLT3.NSD1 %>%
+  filter(MutGrps4 != "CBF, FLT3-ITD" & MutGrps4 != "NPM1 or CEBPA, FLT3-ITD" & USI != "#N/A") %>%
+  mutate(ITD.NSD1=ifelse(grepl("NSD1", MutGrps4), "FLT3NSD1", "FLT3ITD")) %>%
+  set_rownames(.$USI)
+
+dim(FLT3alone)
+```
+
+NOTE: THERE IS AN AWEFUL BUG where some combination of character levels leads to odd duplication of USIs??
+happenw with ITD and ITD.NSD1 as levels...
+
+```{r}
+idx <- rownames(FLT3alone) %in% colnames(cts.1031)
+table(FLT3alone$ITD.NSD1[idx])
+```
+
+```{r}
+# pdf("TARGET_AML_1031_FLT3withNUP98-NSD1_vs_FLT3alone_Heatmap.pdf")
+DEGs.FLT3 <- twoGroups_DEGs(expnData = cts.1031, 
+                            clinData = FLT3alone,
+                            col = "ITD.NSD1", 
+                            ref = "FLT3ITD", 
+                            logCPM = TRUE)
+
+# dev.off()
+```
+
+
+```{r}
+summary(DEGs.FLT3)
+```
+
+```{r}
+# table(DEGs.FLT3)
+```
+
+```{r}
+FLT3.df <- extract_DEGs(DEGs.FLT3)
+head(FLT3.df)
+```
+
+```{r}
+# write.csv(FLT3.df, "TARGET_AML_1031_FLT3withNUP98-NSD1_vs_FLT3alone_DEGs.csv", row.names = FALSE)
+```
+
+```{r}
+extract_MDS(DEGs.FLT3)
+```
+
+```{r}
+# pdf("LT3withNUP98-NSD1_vs_FLT3alone_PCA.pdf")
+extract_PCA(DEGs.FLT3)
+# dev.off()
+```
+
+
+#Identify NUP98.NSD1-like genes 
+
+
+```{r}
+source("~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/corrplot_Function.r")
+```
+
+
+```{r}
+  #find absolute correlation values 
+  gene.cor.abs <- abs(cor(t(cts.1031[DEGs.df$gene,])))
+  gene.cor.abs[1:10, 1:10]
+```
+
+```{r}
+  #function to pullout the highest genes correlation pair
+  maxAbsCor <- function(x){
+    x <- x[x < 1] #remove the correlation to itself
+    x <- x[x == max(x)]
+    res <- data.frame(cor=x,
+                      pair=names(x), 
+                      stringsAsFactors = FALSE)
+    
+    return(res)
+  }
+```
+
+```{r}
+  #apply the function to each row or column (doesn't matter its a diagnol upper and lower matrix still)
+maxcors <- bind_rows(apply(gene.cor.abs,2, maxAbsCor)) %>%
+    mutate(gene=colnames(gene.cor.abs)) %>%
+    arrange(desc(cor)) %>%
+    dplyr::slice(seq(1,nrow(.), by=2)) %>% #remove recipricol pairs 
+    filter(cor >= quantile(cor, c(0.95))) #select correlations in the 80th percentile or greater 
+
+head(maxcors)
+dim(maxcors)
+```
+
+
+```{r}
+corrPairs <- maxCorrPairs(cts.1031[DEGs.df$gene,])
+```
+
+
+```{r}
+DEGs.df.sig <- DEGs.df %>%
+  filter(adj.P.Val < 0.0001) %>%
+  filter(gene %in% maxcors$pair | gene %in% maxcors$gene)
+
+dim(DEGs.df.sig)
+```
+
+
+```{r}
+# d.top <- dge_dendrograms(expData = DEGs.NSD1$InputExpnMatrix, pheno = DEGs.NSD1$phenovector,   )
+```
+
+
+
+
+
+#Waterfall plot of Genes of Interest
+
+
+```{r}
+ph <- ifelse(grepl("GroupA", DEGs.FLT3$phenovector ), "FLT3.NSD1", "FLT3.alone") %>% 
+  set_names(names(DEGs.FLT3$phenovector))
+
+NBMorOtherAML <- ifelse(grepl("^BM|^RO",colnames(tpm)), "NBM", "otherAML")%>%
+  set_names(colnames(tpm)) %>%
+  subset(.,! names(.) %in% names(ph))
+
+pheno <- c(ph,NBMorOtherAML) %>% set_names(c(names(ph), names(NBMorOtherAML)))
+
+ph[1:10]
+pheno[c(1:5,1000,1100)]
+```
+
+```{r}
+table(pheno)
+```
+
+
+```{r}
+waterfallPlot(tpm,"CSF1R",pheno,unit="TPM")
+```
+
+```{r}
+df.csf1r <- data.frame(t(tpm), 
+                  Patient=names(tpm),
+                  Status=phenoVector)
+```
+
+
+
+
+
+#Session Information 
+
+```{r}
+sessionInfo()
+```
+
+
+

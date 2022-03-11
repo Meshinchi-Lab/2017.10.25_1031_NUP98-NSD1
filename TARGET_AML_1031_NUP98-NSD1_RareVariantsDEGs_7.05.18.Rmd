@@ -1,0 +1,879 @@
+---
+title: "Differential Expression of NUP98-NSD1"
+author: "Jenny Smith"
+date: "July, 5 2018"
+output: html_document
+---
+
+#Set-up
+
+```{r setup}
+library(knitr)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=50),tidy=TRUE, fig.align='center', fig.height = 10, fig.width = 10)
+knitr::opts_knit$set(root.dir = file.path(PROJHOME,"2017.10.25_1031_NUP98-NSD1/"))
+options(stringsAsFactors = FALSE)
+```
+
+
+```{r message = FALSE, warning=FALSE}
+library(stringr)
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(tibble)
+library(DeGSEA)
+getwd()
+```
+
+NOTE: Updated the methods on 5/7/18  to use "DifferentialExpressionPipeline_3.21.18.r"
+NOTE: Updated on 7/5/18 to use DifferentialExpressionPipeline_7.05.18.r
+
+
+#Define Functions to be used
+
+```{r}
+mutationGroup <- function(NPM1,CEBPA,NUP98.NSD1,CBF=FALSE,inv.16.16_t.16.16=NULL,t.8.21=NULL){
+#yes,this assumes if CBF-AML + FLT3-ITD, does not have any additional co-occuring mutations. 
+  
+  NPM1orCEBPA <-  any(grepl("Pos|Yes",c(NPM1,CEBPA),ignore.case=TRUE))
+  NSD1 <- grepl("Pos|Yes", NUP98.NSD1, ignore.case = TRUE)
+  
+  if (NPM1orCEBPA){
+    grp <- "NPM1 or CEBPA, FLT3-ITD"
+
+  }else if (NSD1){
+    grp <- "NUP98-NSD1, FLT3-ITD" #NOTE THERE IS ONE NUP98-NSD1 + NPM1 + FLT3-ITD patient.... in0531
+
+  }else{
+    grp <- "FLT3-ITD"
+
+  }
+
+  if (CBF){ #ONE patient is NSD1+ and Inv16 ... in 0531
+    grp[grepl("Pos|Yes", inv.16.16_t.16.16, ignore.case = TRUE) | grepl("Pos|Yes",t.8.21, ignore.case = TRUE)] <- "CBF, FLT3-ITD"
+  }
+
+  return(grp)
+}
+```
+
+
+
+#Read in the counts
+
+```{r}
+cts <- readRDS("~/RNA_seq_Analysis/0000.00.03_Expression_Matrices/TARGET_AML_1031_0531_Counts_List.RDS")
+```
+
+
+#Read in the clinical Data
+
+```{r}
+CDE.1031 <- read.csv("~/reference_mapping-files/AAML1031_Target_CDEs_with_HiAR_and_PrimaryCyto_withFusionCalls_10.11.2018.csv")
+
+head(CDE.1031[,1:5])
+```
+
+```{r}
+table(CDE.1031$NUP98_NSD1__RNASeqCalls) #50 positive patients
+```
+
+```{r}
+pos.1031.update <- CDE.1031 %>%
+  filter(grepl("Level",NUP98_NSD1__ConfidenceLevel__byFusionsOfInterest__Detailed)) %>%
+  dplyr::select(USI) %>%
+  unlist()
+```
+
+```{r}
+CDE.0531 <- read.csv("~/reference_mapping-files/TARGET_AML_current_asof_june30_2016_UPDATED_CLEAN_4.19.18.csv", stringsAsFactors = FALSE)
+
+rownames(CDE.0531) <- CDE.0531$TARGET.USI.1
+  
+head(CDE.0531[,1:5])
+```
+
+```{r}
+table(CDE.0531$NUP98.NSD1)
+```
+
+
+```{r}
+merged <- readRDS(file.path(CDE,"Merged/TARGET_AML_0531_1031_merged_CDEs_9.4.19.RDS"))
+
+
+merged <- merged %>%
+  filter(!is.na(USI)) %>%
+  mutate_at(vars(NUP98.NSD1), funs(gsub("Intermediate", "Yes", .))) %>%
+  set_rownames(.$USI)
+
+
+head(merged[,1:5])
+table(merged$NUP98.NSD1)
+# dim(merged) #1149 by  139
+
+# merged  <- read.csv("~/reference_mapping-files/TARGET_AML_1031_CDE_cleaned_7.5.2018.csv",
+#                      stringsAsFactors = FALSE)
+# merged <- read.csv("~/reference_mapping-files/TARGET_AML_0531_1031_merged_CDEs_3.01.19.csv", stringsAsFactors = FALSE)
+```
+
+
+
+
+#Perform Differential Expression NUP98-NSD1 vs Other AMLs
+
+```{r}
+source("~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/DifferentialExpressionPipeline_01.07.19.r")
+```
+
+
+## Including other NUPs 
+
+```{r message=FALSE}
+# tiff("AAML1031_NU98.NSD1_vs_OtherAMLs_inc_Other_Nups_Heatmap.tiff", height = 10, width = 10, units="in", res=300)
+DEGs.1031 <- twoGroups_DEGs(expnData = cts$cts.hd.1031, 
+                            clinData = merged, 
+                            col="NUP98.NSD1", 
+                            ref="No")
+# dev.off()
+# saveRDS(DEGs.1031, "AAML1031_NUP98.NSD1_vs_OtherAMLs_2.13.19.RDS")
+DEGs.1031 <- readRDS("AAML1031_NUP98.NSD1_vs_OtherAMLs_2.13.19.RDS")
+summary(DEGs.1031)
+```
+
+```{r}
+table(DEGs.1031$phenovector)
+DEGs.df <- extract_DEGs(DEGs.1031)
+DEGs.anno <- extract_DEGs(DEGs.1031, anno = TRUE, geneLevel = TRUE)
+
+head(DEGs.anno)
+dim(DEGs.anno)
+
+# write.csv(DEGs.anno, "TARGET_AML_NUP98.NSD1_vs_OtherAMLs_updateAnno_DEGs.csv", row.names=FALSE)
+```
+
+```{r}
+# tiff("AAML1031_NUP98.NSD1_vs_OtherAMLs_Heatmap_2.14.19.tiff", height = 8, width = 12, units="in", res=300)
+draw(DEGs.1031$Heatmap)
+# dev.off()
+```
+
+```{r fig.height=5, fig.width=7}
+# tiff("AAML1031_NUP98.NSD1_vs_OtherAMLs_MDS_2.14.19.tiff", height = 8, width = 12, units="in", res=300)
+extract_MDS(DEGs.1031)
+# dev.off()
+# extract_PCA(DEGs.1031)
+```
+
+```{r message=FALSE}
+NSD1vsOtherAMLs <- lapply(cts.list, twoGroups_DEGs, 
+                          clinData=merged,
+                          col="NUP98.NSD1",
+                          ref="No",
+                          logCPM=FALSE, 
+                          anno=TRUE)
+
+dev.off()
+# load("TARGET_AML_0531_1031_NUP98.NSD1_vs_otherAML_IncludingOtherNUPs_DEGs.RData")
+```
+
+
+```{r}
+summary(NSD1vsOtherAMLs) 
+
+table(NSD1vsOtherAMLs$HD.1031$phenovector)
+```
+
+```{r}
+# table(NSD1vsOtherAMLs$HD.0531$phenovector)
+lapply(NSD1vsOtherAMLs, function(x) table(x$phenovector)) #34 in LD.0531, and 49 in 1031
+```
+
+```{r}
+pos.1031 <- NSD1vsOtherAMLs$HD.1031$phenovector %>%
+  .[.=="GroupA"] %>%
+  names(.)
+setdiff(pos.1031.update, pos.1031) #this is because parvsf is NOT 1031... it was one of the 11 0531 who were inlcuded in batch1. 
+```
+
+```{r}
+NSD1vsOtherAMLs.DEGs <- lapply(NSD1vsOtherAMLs, extract_DEGs)
+# lapply(NSD1vsOtherAMLs.DEGs, head, n=10)
+lapply(NSD1vsOtherAMLs.DEGs, dim)
+```
+
+```{r}
+NDS1vsOtherAMLs.DE.Anno <- lapply(NSD1vsOtherAMLs, extract_DEGs, anno=TRUE)
+# lapply(NDS1vsOtherAMLs.DE.Anno, head, n=10)
+lapply(NDS1vsOtherAMLs.DE.Anno, dim)
+```
+
+
+```{r}
+NSD1vsOtherAMLs.Anno.Sub <- lapply(NDS1vsOtherAMLs.DE.Anno, extract_anno_subset)
+
+lapply(NSD1vsOtherAMLs.Anno.Sub, dim)
+```
+
+```{r}
+# lapply(names(NSD1vsOtherAMLs.DEGs), function(x) write.csv(NSD1vsOtherAMLs.DEGs[[x]],                                          file=paste0("TARGET_AML_NUP98.NSD1_vs_OtherAMLs_includingNUPs_",x,"_DEGs_7.10.18.csv")))
+```
+
+
+```{r}
+# lapply(names(NDS1vsOtherAMLs.DE.Anno), function(x) write.csv(NDS1vsOtherAMLs.DE.Anno[[x]],                                          file=paste0("TARGET_AML_NUP98.NSD1_vs_OtherAMLs_includingNUPs_",x,"_DEGs_withProtientAnno_TranscriptLevel_7.10.18.csv")))
+```
+
+```{r}
+# lapply(names(NSD1vsOtherAMLs.Anno.Sub), function(x) write.csv(NSD1vsOtherAMLs.Anno.Sub[[x]],                                          file=paste0("TARGET_AML_NUP98.NSD1_vs_OtherAMLs_includingNUPs_",x,"_DEGs_withProtientAnno_GeneLevel_7.10.18.csv")))
+```
+
+
+##Exluding Other NUP Variants 
+
+
+```{r}
+# pdf("TARGET_AML_0531_1031_NUP98.NSD1vsOtherAML_ExclNups_heatmaps.pdf", height = 10, width = 10)
+# NSD1vsOtherAMLs.ExclNups <- lapply(cts.list, twoGroups_DEGs,
+#                                    clinData=merged.ExclOtherNups,
+#                                    col="NUP98.NSD1",
+#                                    ref="No",
+#                                    logCPM=FALSE)
+# dev.off()
+```
+
+
+```{r}
+# NSD1.ExclNups.DEGs <- lapply(NSD1vsOtherAMLs.ExclNups, extract_DEGs)
+```
+
+
+```{r}
+# lapply(names(NSD1.ExclNups.DEGs),function(x) write.csv(NSD1.ExclNups.DEGs[[x]],
+#                                                        file=paste0("TARGET_AML_NUP98.NSD1_vs_OtherAMLs_", x,"DEGS.csv"), row.names = FALSE))
+```
+
+
+#DE Analysis: NUP98-NSD1 vs NBM
+
+```{r}
+# pdf(file="TARGET_AML_NUP98.NSD1_vs_NormalBM_DEGs_Heatmaps_7.09.18.pdf")
+DEGs.NSD1vBM <- mapply(twoGroups_DEGs,cts.list[2:3], cde.list[2:3],
+                                   MoreArgs = list(
+                                   col="NUP98.NSD1",
+                                   ref="No",
+                                   logCPM=FALSE, 
+                                   BM=TRUE), SIMPLIFY = FALSE)
+# dev.off()
+# save(DEGs.NSD1vBM, file="TARGET_AML_0531_1031_NUP98.NSD1_vs_NBM_DEGs.RData")
+# load("TARGET_AML_0531_1031_NUP98.NSD1_vs_NBM_DEGs.RData")
+```
+
+```{r}
+NBM.df <- lapply(DEGs.NSD1vBM, extract_DEGs)
+
+# lapply(NBM.df, head, n=10)
+# lapply(NBM.df, dim)
+```
+
+```{r}
+NBM.df.anno <- lapply(DEGs.NSD1vBM, extract_DEGs, anno=TRUE)
+
+# lapply(NBM.df.anno, head, n=10)
+lapply(NBM.df.anno, dim)
+```
+
+```{r}
+NBM.Anno.sub <- lapply(NBM.df.anno, extract_anno_subset)
+
+lapply(NBM.Anno.sub, dim)
+```
+
+```{r}
+PCA.NBM <- lapply(DEGs.NSD1vBM, extract_PCA)
+
+PCA.NBM
+```
+
+```{r}
+# lapply(names(NBM.df),function(x) write.csv(NBM.df[[x]],
+#                                            file=paste0("TARGET_AML_",x,"_NUP98-NSD1_vs_NormalBM_DEGs_7.10.18.csv"),
+#                                            row.names = FALSE))
+
+# lapply(names(NBM.df.anno),function(x) write.csv(NBM.df.anno[[x]],
+#                                            file=paste0("TARGET_AML_",x,"_NUP98-NSD1_vs_NormalBM_DEGs__withProtienAnno_TranscriptLevel_7.10.18.csv"),
+#                                            row.names = FALSE))
+
+# lapply(names(NBM.Anno.sub),function(x) write.csv(NBM.Anno.sub[[x]],
+#                                            file=paste0("TARGET_AML_",x,"_NUP98-NSD1_vs_NormalBM_DEGs__withProtienAnno_GeneLevel_7.10.18.csv"),
+#                                            row.names = FALSE))
+```
+
+
+
+#DE Analysis: NUP98-NSD1/ITD+ vs  NUP98-NSD1/ITD-
+
+removing the FLT3+CEBPA and FLT3+NPM1 mutants to avoid co-variates, though this should be investigated to be included in the model terms. 
+
+All FLT3-ITD: N= 350 
+FLT3-ITD w/o CEBPA or NPM1: N = 257
+
+For samples with RNA-seq, this means from 134 FLT3-ITD patients down to 88 samples. 
+
+  mutate(ITD.CEBPA.NPM1=paste(FLT3.ITD.positive., CEBPA.mutation, NPM.mutation)) %>%
+  filter(!grepl("Yes.+Yes|Yes Yes.+", ITD.CEBPA.NPM1)) %>% #remove other co-occuring mutations
+
+```{r}
+temp <- merged %>% 
+  filter(FLT3.ITD.positive. == "Yes" | NUP98.NSD1 == "Yes" ) %>%
+  #remove other co-occuring fusions/mutations
+  filter(DEK.NUP214 != "Yes", CEBPA.mutation != "Yes", NPM.mutation != "Yes") %>%  
+  filter(!grepl("inv.16|t.8.21", Cytogenetic.Category.1)) %>%
+  filter(USI %in% colnames(cts$cts.hd.1031)) %>%
+ 
+  
+  mutate(NSD1.ITDvsNSD1=case_when(
+    FLT3.ITD.positive. == "Yes" & NUP98.NSD1 == "Yes" ~ "Yes",
+    FLT3.ITD.positive. == "No" & NUP98.NSD1 == "Yes" ~ "No",
+    TRUE ~ "Unknown")) %>% #using "unknown" simply to avoid including these samples
+  mutate(NSD1.ITDvsFLT3=case_when(
+    FLT3.ITD.positive. == "Yes" & NUP98.NSD1 == "Yes" ~ "Yes",
+    FLT3.ITD.positive. == "Yes" & NUP98.NSD1 == "No" ~ "No",
+    TRUE ~ "Unknown")) %>%
+  set_rownames(.$USI)
+
+
+
+
+head(temp[,1:5])
+dim(temp) #115 160
+```
+
+the AREAS in the plot are wrong -- rather use 'freq = FALSE'
+```{r }
+# quantile(temp$FLT3.ITD.allelic.ratio, na.rm=TRUE)
+table(temp$FLT3.ITD.allelic.ratio > 0.1, temp$NUP98.NSD1, useNA="always")
+
+```
+
+
+```{r fig.height=5, fig.width=5}
+# tiff("histogram_FLT3-ITD_Allelic_Ratio.tiff", height = 5, width=5, units="in", res=200)
+hist(temp$FLT3.ITD.allelic.ratio,
+     main="Histogram of FLT3-ITD Allelic Ratio",
+     freq = TRUE,
+     breaks = c(seq(0,16, by=0.1)),
+     xlim=c(0,16),
+     ylim=c(0,25),
+     col = "cornflowerblue")
+abline(v=0.1, col="red",lty=2, lwd=2)
+# dev.off()
+```
+
+```{r}
+table(temp$NSD1.ITDvsNSD1)
+table(temp$NSD1.ITDvsFLT3)
+table(temp$Cytogenetic.Category.1)
+# table(temp$FLT3.ITD.positive.,temp$NUP98.NSD1, useNA="always")
+```
+
+
+*Doent work - cant find functions that were sourced in the script (bc Rslurm only knows the input function in a 'vacuum').  So need to create my own r-package or wrap every dependency inside 'twoGroups_DEGs()'*
+
+```{r}
+library(rslurm)
+
+# c <- cts$cts.hd.1031
+
+# sopt <- list(nodes='1', 'cpus-per-task'='4','time' = '24:00:00', 'mail-type'='FAIL', 'mail-user'='jlsmith3@fredhutch.org')
+ 
+
+# DE.job <- slurm_call(f=twoGroups_DEGs,jobname = "NSD1.ITDvsNSD1",
+#                      params =  list(expnData = c, 
+#                             clinData = temp, 
+#                             col="NSD1.ITDvsNSD1", 
+#                             ref="No"), 
+#                      add_objects = c("c", "temp"),
+#                      slurm_options=sopt, 
+#                      submit = TRUE) #Submitted batch job 33628943
+```
+
+
+```{r}
+NSD1.ITDvsNSD1 <- twoGroups_DEGs(expnData = cts$cts.hd.1031, 
+                            clinData = temp, 
+                            col="NSD1.ITDvsNSD1", 
+                            ref="No")
+
+table(NSD1.ITDvsNSD1$phenovector)
+# saveRDS(NSD1.ITDvsNSD1, "TARGET_AML_1031_NUP98.NSD1.FLT3-ITD_vs_NSD1.alone_DEGs.RDS")
+```
+
+```{r}
+# NSD1.ITDvsNSD1.df <- extract_DEGs(NSD1.ITDvsNSD1,anno = TRUE, geneLevel = TRUE)
+# write.csv(NSD1.ITDvsNSD1.df, "TARGET_AML_1031_NSD1.ITDvsNSD1_DEGs.csv", row.names = FALSE)
+
+head(NSD1.ITDvsNSD1.df)
+dim(NSD1.ITDvsNSD1.df) #104  11
+```
+
+```{r fig.height=8, fig.width=10}
+# tiff("AAML1031_NSD1.ITDvsNSD1_Heatmap_2.14.19.tiff", height = 8, width = 10, units="in", res=300)
+draw(NSD1.ITDvsNSD1$Heatmap)
+# dev.off()
+```
+
+```{r fig.height=5, fig.width=7}
+extract_MDS(NSD1.ITDvsNSD1)
+extract_PCA(NSD1.ITDvsNSD1)
+```
+
+# DE Analysis: NUP98.NSD1.ITD vs FLT3.ITD alone
+
+```{r}
+NSD1.ITDvsFLT3 <- twoGroups_DEGs(expnData = cts$cts.hd.1031, 
+                            clinData = temp, 
+                            col="NSD1.ITDvsFLT3", 
+                            ref="No")
+
+table(NSD1.ITDvsFLT3$phenovector)
+# saveRDS(NSD1.ITDvsFLT3, "TARGET_AML_1031_NUP98.NSD1.FLT3-ITD_vs_FLT3.alone_DEGs.RDS")
+# NSD1.ITDvsFLT3 <- readRDS("TARGET_AML_1031_NUP98.NSD1.FLT3-ITD_vs_FLT3.alone_DEGs.RDS")
+```
+
+```{r}
+# i <- names(NSD1.ITDvsFLT3$phenovector)
+# table(temp[i,]$FLT3.ITD.allelic.ratio > 0.1, temp[i,]$FLT3.ITD.positive.,
+#       temp[i,]$NUP98.NSD1, useNA="always")
+```
+
+```{r}
+NSD1.ITDvsFLT3.df <- extract_DEGs(NSD1.ITDvsFLT3,anno = TRUE, geneLevel = TRUE)
+# write.csv(NSD1.ITDvsFLT3.df, "DEGs/TARGET_AML_1031_NSD1.ITDvsFLT3_DEGs.csv", row.names = FALSE)
+
+head(NSD1.ITDvsFLT3.df)
+dim(NSD1.ITDvsFLT3.df) #1799
+```
+
+```{r fig.height=8, fig.width=10}
+# tiff("AAML1031_NSD1.ITDvsFLT3.df_Heatmap_2.14.19.tiff", height = 8, width = 10, units="in", res=300)
+draw(NSD1.ITDvsFLT3$Heatmap)
+# dev.off()
+```
+
+```{r fig.height=5, fig.width=7}
+extract_MDS(NSD1.ITDvsFLT3)
+extract_PCA(NSD1.ITDvsFLT3)
+```
+
+```{r}
+dat <- merged %>% 
+  dplyr::select(USI,FLT3.ITD.positive.,Group=NUP98.NSD1, WT1.mutation.) %>% 
+  filter(USI %in% names(NSD1.ITDvsFLT3$phenovector)) %>% 
+  mutate_at(vars(Group), ~ifelse(.=="Yes", "NUP98-NSD1/FLT3.ITD+","FLT3.ITD+")) %>%
+  set_rownames(.$USI)
+
+
+dim(dat)
+head(dat)
+table(dat$FLT3.ITD.positive., dat$WT1.mutation., dat$Group)
+```
+
+```{r}
+genes <- NSD1.ITDvsFLT3.df %>% 
+  filter(abs(logFC) >= quantile(abs(logFC))[4])
+
+dim(genes)
+# write.csv(genes, "TARGET_AAML1031_NUP98.NSD1.ITD_vs_FLT3.ITD_75thPercentilelogFC_DEGs.csv", row.names = FALSE)
+
+cc <- list(Group=c("NUP98-NSD1/FLT3.ITD+"="firebrick", "FLT3.ITD+"="black"), #FLT3.ITD.positive.=c("Yes"="darkblue"), 
+           WT1.mutation.=c("Yes"="seagreen",
+                           "No"="palegreen",
+                           "Unknown"="lightslategrey"))
+
+anno <- create_HA_Labs_Hmap(expn=NSD1.ITDvsFLT3$DE$Voom$E, 
+                            geneList = genes$gene,
+                            colorbar.height = 1,
+                            CDE = dat,
+                            cols=c("Group",
+                                   "WT1.mutation."),
+                            cc = cc)
+```
+
+```{r}
+Hmap <- ComplexHmap(mat=NSD1.ITDvsFLT3$DE$Voom$E[genes$gene,],
+                    name = "",
+                    scale = TRUE,
+                    hmap_anno_obj = anno$annoColumn)
+
+```
+
+```{r}
+# png("NUP98.NSD1.IDT_vs_FLT3.ITD_75thPercentileLogFC_Heatmap.png", height = 10, width = 10, units="in", res=300)
+draw(Hmap)
+# dev.off()
+
+```
+
+
+
+#Examine the results of the Gene Set Enrichment Analysis
+
+```{r}
+source("~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/GAGE_GSEA_Function.r")
+```
+
+```{r}
+script="~/scripts/RNAseq_Analysis/DifferentialExpn_PathwayAnalysis/NUP98_NSD1/gage_NUP98.NSD1.r"
+NSD1.FLT3.job <- system(paste("sbatch -n 1 -c 4 -e gage.%j.stderr -o gage.%j.out -t 0-1", script),
+                        intern = TRUE)
+NSD1.FLT3.job
+```
+
+```{r}
+path="GAGE/NSD1.FLT3-ITD_vs_FLT3_or_NSD1_alone/"
+all.res <- dir(path, pattern = "*.RDS")
+all.res
+```
+
+```{r}
+gage.res <- list()
+for (f in all.res){
+  n <- gsub("^.+GAGE_([eF].+).RD.+", "\\1", f) %>%
+    gsub("_Set.+","",.)
+  
+  # gage.res[[n]] <- get(load(paste0("GAGE/", f)))
+  gage.res[[n]] <- readRDS(paste0(path,f)) #using RDS allows you to read it directly into the list, and not the global envio
+}
+
+rm(list = ls(pattern="^GSA"))
+```
+
+```{r}
+res.1031 <- list()
+for (res in names(gage.res)){
+  res.1031[[res]] <- gage.res[[res]]$HD.1031
+}
+# rm(gage.res)
+summary(res.1031)
+```
+
+```{r}
+# res.NSD1 <- list()
+# for (res in names(gage.res)){
+#   res.NSD1[[paste0("NSD1.ITDvsNSD1_",res)]] <- gage.res[[res]]$NSD1.ITDvsNSD1
+#   res.NSD1[[paste0("NSD1.ITDvsFLT3_", res)]] <- gage.res[[res]]$NSD1.ITDvsFLT3
+# }
+
+
+for (res in names(res.NSD1)){
+  
+    r <- res.NSD1[[res]]
+  
+    up.name <- paste0("TARGET_AML_1031_",res,"_UpRegulated_Paths.csv")
+    up.res <- r$SigPaths.Up[,1:5]
+    # print(up.name)
+    # print(dim(up.res))
+    write.csv(up.res, up.name)
+    
+    dn.name <- paste0("TARGET_AML_1031_", res, "_DownRegulated_Paths.csv")
+    dn.res <- r$SigPaths.Dn[,1:5]
+    # print(dn.name)
+    # print(dim(dn.res))
+    write.csv(dn.res,dn.name)
+    
+}
+
+# summary(res.NSD1)
+```
+
+```{r}
+# res.1031$expn_C2.All$SigPaths[1:5,1:5]
+# res.1031$expn_C2.KEGG$SigPaths[1:5,1:5]
+# res.1031$expn_HSA.KEGG$SigPaths[1:5,1:5]
+```
+
+```{r}
+for (res in names(res.1031)){
+  
+  r <- res.1031[[res]]
+  
+  if(all(length(r) == 4 & grepl("expn",res))){
+    
+    up.name <- paste0("TARGET_AML_1031_NUP98.NSD1_vs_OtherAMLs_includingNUPs_UpRegulated_",res,"_Paths.csv")
+    up.res <- r$SigPaths[,1:5]
+    # print(up.name)
+    # print(dim(up.res))
+    # write.csv(up.res, up.name)
+    
+    dn.name <- paste0("TARGET_AML_1031_NUP98.NSD1_vs_OtherAMLs_includingNUPs_DownRegulated_",res,"_Paths.csv")
+    dn.res <- subset(r$gsa$less,r$gsa$less[,"q.val"] <  0.1 &
+                       !is.na(r$gsa$less[,"q.val"]))
+    # print(dn.name)
+    # print(dim(dn.res))
+    # write.csv(dn.res,dn.name)
+    
+  }
+}
+```
+
+
+
+
+# Expression Waterfall plots 
+
+```{r}
+source("~/scripts/RNAseq_Analysis/Waterfallplots/Waterfall_Barplot_Function_2017.05.22.r")
+```
+
+```{r }
+CPM <- as.data.frame(2^NSD1vsOtherAMLs$HD.1031$DE$Voom$E)
+```
+
+```{r fig.height=5, fig.width=10}
+pax8 <- waterfallPlot(expnMatrix = CPM,
+                      geneName = "PAX8", 
+                      phenoVector = NSD1vsOtherAMLs$HD.1031$phenovector,
+                      unit = "log2(CPM)") +
+  scale_color_manual(values = c("GroupA"="firebrick","GroupB"="black")) +
+  scale_fill_manual(values = c("GroupA"="firebrick","GroupB"="black"))
+
+pax8
+```
+
+```{r fig.height=5, fig.width=10}
+irf8 <- waterfallPlot(expnMatrix = CPM,
+                      geneName = "IRF8", 
+                      phenoVector = NSD1vsOtherAMLs$HD.1031$phenovector,
+                      unit = "log2(CPM)") +
+  scale_color_manual(values = c("GroupA"="firebrick","GroupB"="black")) +
+  scale_fill_manual(values = c("GroupA"="firebrick","GroupB"="black"))
+
+irf8
+```
+
+
+#Survival Analysis NUP98.NSD1.ITD vs FLT3.ITD alone
+
+```{r}
+source("~/scripts/survival_analysis/Survplot_Functions_2018.10.24.r")
+```
+
+DEK-NUP214 have better outcomes! than FLT3-ITD in general. They are more a standard risk, like around 50-60% OS based on literature.
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4008104/
+
+
+```{r}
+df <- merged %>% 
+  filter(Protocol == "AAML1031") %>%
+  dplyr::select(USI,FLT3.ITD.positive., NUP98.NSD1, 
+         WT1.mutation.,CEBPA.mutation.,NPM.mutation.,
+         Primary.Fusion.CNV,Cytogenetic.Category.1,
+         EFS.time..days., Event.ID, OS.time..days., OS.ID) %>% 
+  filter(FLT3.ITD.positive. == "Yes" | NUP98.NSD1 == "Yes" ) %>%
+  # remove other co-occuring fusions/mutations
+  filter(CEBPA.mutation. != "Yes",
+         !grepl("DEK.NUP214",Primary.Fusion.CNV),
+         NPM.mutation. != "Yes") %>%
+  filter(!grepl("inv.16|t.8.21", Cytogenetic.Category.1)) %>%
+  mutate(Group=case_when(
+    FLT3.ITD.positive. == "Yes" & NUP98.NSD1 == "Yes" ~ "NUP98-NSD1/FLT.ITD+",
+    FLT3.ITD.positive. == "No" & NUP98.NSD1 == "Yes" ~ "NUP98-NSD1",
+    FLT3.ITD.positive. == "Yes" & NUP98.NSD1 == "No" ~ "FLT3.ITD+")) %>%
+  filter(Group !=  "FLT3.ITD+") %>%
+  set_rownames(.$USI)
+
+# table(df$FLT3.ITD.positive., df$NUP98.NSD1)
+table(df$Group,useNA = 'ifany')
+dim(df)
+```
+
+```{r message=FALSE}
+NSD1vsITD.KM <- KM.plots(df=df, 
+                         group_vars = NULL,
+                         type = "OS",
+                         covariate = "Group",
+                         cohort = "1031",
+                         max.year = 8)
+```
+
+```{r fig.width=14, fig.height=7}
+# pdf("NUP98.NDS1.ITD_vs_NUP98.NSD1_AAML1031_rmCooccurring_Fusions_Mutations_KM.pdf",height = 7, width=14)
+grid.arrange(grobs=c(NSD1vsITD.KM$OS,NSD1vsITD.KM$EFS), 
+            ncol=2)
+# dev.off()
+```
+
+
+
+#Survival Analysis with PROM1 and CLEC12A
+
+```{r}
+source("~/scripts/survival_analysis/Survplot_Functions_2018.10.24.r")
+```
+
+```{r}
+head(DEGs.anno[,])
+```
+
+```{r}
+find_min <- function(expn){
+  d <- density(expn)
+  min <- optimize(approxfun(d$x,d$y),interval=c(2.5,5))$minimum
+  
+  return(min)
+}
+```
+
+```{r fig.height=5, fig.width=10}
+p1 <- ggplot(expn.surv.dat, aes(x=NUP98.NSD1, y=CLEC12A, fill=NUP98.NSD1)) + 
+  geom_boxplot() +
+  theme_classic() +
+  theme(axis.text = element_text(size=20)) +
+  labs(y="CLEC12A (log2 CPM)")
+
+p2 <- ggplot(expn.surv.dat, aes(x=NUP98.NSD1, y=PROM1, fill=NUP98.NSD1)) + 
+  geom_boxplot() +
+  theme_classic() +
+  theme(axis.text = element_text(size=20)) +
+  labs(y="PROM1 (log2 CPM)")
+
+grid.arrange(p1,p2,ncol=2, nrow=1) #%>% 
+  # ggsave("boxplots_clec12_prom1.tiff", plot = ., height = 5, width = 10, units="in", dpi=300)
+
+```
+
+```{r}
+expn.surv.dat <- DEGs.1031$DE$Voom$E[c("CLEC12A", "PROM1"),] %>% 
+  t() %>% 
+  as.data.frame() %>%
+  rownames_to_column("USI") %>% 
+  mutate_if(is.numeric, funs(median_groups=ifelse(. >= median(.), "high", "low"), 
+                             min_bimodal=ifelse(. >= find_min(.), "high", "low"))) %>% 
+  mutate(Group="AML") %>% 
+  inner_join(., merged, by="USI")
+
+head(expn.surv.dat[,1:10])
+
+# write.csv(expn.surv.dat, "~/test.csv")
+```
+
+
+```{r fig.height=5, fig.width=5}
+# tiff("clec12a_hist.tiff", height = 5, width = 5, units="in", res=300)
+d <- density(expn.surv.dat$PROM1)
+min <- optimize(approxfun(d$x,d$y),interval=c(2.5,5))$minimum
+
+hist(expn.surv.dat$CLEC12A,breaks = seq(-5, 10, by=0.25), probability = TRUE) 
+lines(d, lwd=5, col="red")
+abline(v=median(expn.surv.dat$CLEC12A), col="red", lwd=2)
+abline(v=min, col="blue", lwd=2)
+
+# dev.off()
+```
+
+```{r fig.height=5, fig.width=5}
+# tiff("prom1_hist.tiff", height = 5, width = 5, units="in", res=300)
+
+d <- density(expn.surv.dat$PROM1)
+min <- optimize(approxfun(d$x,d$y),interval=c(2.5,5))$minimum
+
+hist(expn.surv.dat$PROM1, breaks = seq(-5, 12, by=0.25), probability = TRUE)
+lines(d, lwd=5, col="red")
+abline(v=median(expn.surv.dat$PROM1), col="firebrick", lwd=2)
+abline(v=min, col="blue", lwd=2)
+
+# dev.off()
+```
+
+```{r}
+source("~/scripts/survival_analysis/Survplot_Functions_2018.10.24.r")
+prom1.med.km <- KM.plots(df=expn.surv.dat, 
+                         groupBy = "Group",
+                         type="OS",
+                         covariate = "PROM1_median_groups",
+                         cohort = "0531", 
+                         riskTable = TRUE)
+prom1.med.km
+```
+
+
+```{r fig.width=10, fig.height=5}
+grid.arrange(grobs=list(prom1.med.km$OS[[1]], prom1.med.km$EFS[[1]]), ncol=2, nrow=1) %>% 
+   ggsave("prom1_median_kmplot.tiff", plot = ., height = 5, width = 10, units="in", dpi=300)
+```
+
+
+```{r}
+prom1.min.km <- KM.plots(df=expn.surv.dat, 
+                         groupBy = "Group",
+                         type="OS",
+                         covariate = "PROM1_min_bimodal",
+                         cohort = "0531", 
+                         riskTable = TRUE)
+prom1.min.km
+```
+
+```{r fig.width=5, fig.height=10}
+# plot(prom1.min.km$OS[[1]])
+# plot(prom1.min.km$EFS[[1]])
+
+grid.arrange(grobs=list(prom1.min.km$OS[[1]], prom1.min.km$EFS[[1]]), ncol=2, nrow=1) %>% 
+   ggsave("prom1_min_kmplot.tiff", plot = ., height = 5, width = 10, units="in", dpi=300)
+```
+
+
+```{r}
+clec.med.km <- KM.plots(df=expn.surv.dat, 
+                         groupBy = "Group",
+                         type="OS",
+                         covariate = "CLEC12A_median_groups",
+                         cohort = "0531", 
+                         riskTable = TRUE)
+clec.med.km
+```
+
+
+```{r fig.width=5, fig.height=10}
+
+
+grid.arrange(grobs=list(clec.med.km$OS[[1]], clec.med.km$EFS[[1]]), ncol=2, nrow=1) %>% 
+   ggsave("clecl12a_med_kmplot.tiff", plot = ., height = 5, width = 10, units="in", dpi=300)
+
+```
+
+```{r}
+clec.min.km <- KM.plots(df=expn.surv.dat, 
+                         groupBy = "Group",
+                         type="OS",
+                         covariate = "CLEC12A_min_bimodal",
+                         cohort = "0531", 
+                         riskTable = TRUE)
+clec.min.km
+```
+
+
+```{r}
+plot(clec.min.km$OS[[1]])
+plot(clec.min.km$EFS[[1]])
+
+grid.arrange(grobs=list(clec.min.km$OS[[1]], clec.min.km$EFS[[1]]), ncol=2, nrow=1) %>% 
+   ggsave("clecl12a_min_kmplot.tiff", plot = ., height = 5, width = 10, units="in", dpi=300)
+
+```
+
+
+
+
+
+
+#Session Information 
+
+
+```{r}
+sessionInfo()
+```
+
+
+
